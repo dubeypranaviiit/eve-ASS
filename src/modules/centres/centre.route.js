@@ -6,11 +6,12 @@ import {
   paginationQuerySchema,
   addCentreTestSchema
 } from './centre.schema.js';
+import { authenticate, requireAdmin } from '../../plugins/auth.js';
 import { asyncHandler } from '../../common/utils/async-handler.js';
 
 const router = express.Router();
 
-router.post('/centres', asyncHandler(async (req, res) => {
+router.post('/centres', authenticate, requireAdmin, asyncHandler(async (req, res) => {
   const input = createCentreSchema.parse(req.body);
   const centre = await CentreService.createCentre(input);
   return res.status(201).json(centre);
@@ -28,7 +29,7 @@ router.get('/centres/:id', asyncHandler(async (req, res) => {
   return res.status(200).json(centre);
 }));
 
-router.post('/centres/:id/tests', asyncHandler(async (req, res) => {
+router.post('/centres/:id/tests', authenticate, requireAdmin, asyncHandler(async (req, res) => {
   const params = centreIdParamSchema.parse(req.params);
   const input = addCentreTestSchema.parse(req.body);
   const centreTest = await CentreService.addTestToCentre(params.id, input);

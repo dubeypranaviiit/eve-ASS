@@ -31,12 +31,14 @@ export class AuthService {
 
     const user = await AuthRepository.create({
       email: input.email,
-      passwordHash
+      passwordHash,
+      role: input.role || 'USER'
     });
 
     const accessToken = await signAccessToken({
       userId: user.id,
-      email: user.email
+      email: user.email,
+      role: user.role
     });
 
     return {
@@ -59,13 +61,15 @@ export class AuthService {
 
     const accessToken = await signAccessToken({
       userId: user.id,
-      email: user.email
+      email: user.email,
+      role: user.role
     });
 
     return {
       user: {
         id: user.id,
         email: user.email,
+        role: user.role,
         createdAt: user.createdAt
       },
       accessToken

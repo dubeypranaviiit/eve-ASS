@@ -15,7 +15,12 @@ describe('Payments & Webhook Idempotency Integration Tests', () => {
     app = buildApp();
     await clearDatabase();
 
-    // Setup User 1 & 2
+    // Setup Admin, User 1 & 2
+    const adminRes = await request(app)
+      .post('/auth/signup')
+      .send({ email: 'admin-pay@example.com', password: 'password123', role: 'ADMIN' });
+    const adminToken = adminRes.body.accessToken;
+
     const u1 = await request(app)
       .post('/auth/signup')
       .send({ email: 'user1-pay@example.com', password: 'password123' });
@@ -29,16 +34,19 @@ describe('Payments & Webhook Idempotency Integration Tests', () => {
     // Setup Centre & Test
     const c = await request(app)
       .post('/centres')
+      .set('authorization', `Bearer ${adminToken}`)
       .send({ name: 'Metro Diagnostics', location: 'Mumbai, Maharashtra' });
     centreId = c.body.id;
 
     const t = await request(app)
       .post('/tests')
+      .set('authorization', `Bearer ${adminToken}`)
       .send({ name: 'Thyroid Profile', description: 'Measures T3, T4, and TSH levels.' });
     testId = t.body.id;
 
     await request(app)
       .post(`/centres/${centreId}/tests`)
+      .set('authorization', `Bearer ${adminToken}`)
       .send({ testId, price: 850.0 });
   });
 

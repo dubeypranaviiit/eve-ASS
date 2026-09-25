@@ -5,11 +5,12 @@ import {
   testIdParamSchema,
   paginationQuerySchema
 } from './test.schema.js';
+import { authenticate, requireAdmin } from '../../plugins/auth.js';
 import { asyncHandler } from '../../common/utils/async-handler.js';
 
 const router = express.Router();
 
-router.post('/tests', asyncHandler(async (req, res) => {
+router.post('/tests', authenticate, requireAdmin, asyncHandler(async (req, res) => {
   const input = createTestSchema.parse(req.body);
   const test = await TestService.createTest(input);
   return res.status(201).json(test);

@@ -17,7 +17,8 @@ export async function verifyAccessToken(token) {
     const { payload } = await jose.jwtVerify(token, secretKey);
     return {
       userId: payload.userId,
-      email: payload.email
+      email: payload.email,
+      role: payload.role || 'USER'
     };
   } catch {
     throw new UnauthorizedError('Invalid or expired authentication token', 'UNAUTHORIZED');

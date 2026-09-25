@@ -13,6 +13,7 @@ export class AuthRepository {
       select: {
         id: true,
         email: true,
+        role: true,
         createdAt: true
       }
     });
@@ -22,11 +23,13 @@ export class AuthRepository {
     return db.user.create({
       data: {
         email: data.email,
-        passwordHash: data.passwordHash
+        passwordHash: data.passwordHash,
+        role: data.role || 'USER'
       },
       select: {
         id: true,
         email: true,
+        role: true,
         createdAt: true
       }
     });

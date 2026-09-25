@@ -6,6 +6,7 @@ import { clearDatabase } from '../helpers/db.js';
 
 describe('Bookings & Concurrency Integration Tests', () => {
   let app;
+  let adminToken;
   let user1Token;
   let user2Token;
   let centreId;
@@ -15,33 +16,42 @@ describe('Bookings & Concurrency Integration Tests', () => {
     app = buildApp();
     await clearDatabase();
 
-    // 1. Create User 1
+    // 1. Create Admin
+    const adminRes = await request(app)
+      .post('/auth/signup')
+      .send({ email: 'admin-booking@example.com', password: 'password123', role: 'ADMIN' });
+    adminToken = adminRes.body.accessToken;
+
+    // 2. Create User 1
     const u1Res = await request(app)
       .post('/auth/signup')
       .send({ email: 'user1-booking@example.com', password: 'password123' });
     user1Token = u1Res.body.accessToken;
 
-    // 2. Create User 2
+    // 3. Create User 2
     const u2Res = await request(app)
       .post('/auth/signup')
       .send({ email: 'user2-booking@example.com', password: 'password123' });
     user2Token = u2Res.body.accessToken;
 
-    // 3. Create Centre
+    // 4. Create Centre
     const cRes = await request(app)
       .post('/centres')
+      .set('authorization', `Bearer ${adminToken}`)
       .send({ name: 'Apollo Health City', location: 'Hyderabad, Telangana' });
     centreId = cRes.body.id;
 
-    // 4. Create Test
+    // 5. Create Test
     const tRes = await request(app)
       .post('/tests')
+      .set('authorization', `Bearer ${adminToken}`)
       .send({ name: 'Lipid Profile', description: 'Measures cholesterol and triglycerides levels.' });
     testId = tRes.body.id;
 
-    // 5. Link Test to Centre with Price = 600.00
+    // 6. Link Test to Centre with Price = 600.00
     await request(app)
       .post(`/centres/${centreId}/tests`)
+      .set('authorization', `Bearer ${adminToken}`)
       .send({ testId, price: 600.0 });
   });
 
@@ -91,6 +101,7 @@ describe('Bookings & Concurrency Integration Tests', () => {
     // Create an unlinked test
     const t2Res = await request(app)
       .post('/tests')
+      .set('authorization', `Bearer ${adminToken}`)
       .send({ name: 'Unlinked Test', description: 'Test description' });
     const unlinkedTestId = t2Res.body.id;
 

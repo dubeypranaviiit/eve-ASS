@@ -6,10 +6,32 @@ import { clearDatabase } from '../helpers/db.js';
 
 describe('Centres & Tests Integration Tests', () => {
   let app;
+  let adminToken;
+  let userToken;
 
   beforeAll(async () => {
     app = buildApp();
     await clearDatabase();
+
+    // Create Admin User
+    const adminRes = await request(app)
+      .post('/auth/signup')
+      .send({
+        email: 'admin-centres@example.com',
+        password: 'password123',
+        role: 'ADMIN'
+      });
+    adminToken = adminRes.body.accessToken;
+
+    // Create Regular User
+    const userRes = await request(app)
+      .post('/auth/signup')
+      .send({
+        email: 'patient-centres@example.com',
+        password: 'password123',
+        role: 'USER'
+      });
+    userToken = userRes.body.accessToken;
   });
 
   afterAll(async () => {
@@ -20,9 +42,35 @@ describe('Centres & Tests Integration Tests', () => {
   let createdCentreId;
   let createdTestId;
 
-  it('should create a diagnostic centre', async () => {
+  it('should reject creating diagnostic centre without authentication', async () => {
     const res = await request(app)
       .post('/centres')
+      .send({
+        name: 'Unauth Diagnostics',
+        location: 'Bangalore, Karnataka'
+      });
+
+    expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('UNAUTHORIZED');
+  });
+
+  it('should reject creating diagnostic centre with regular user role (Forbidden)', async () => {
+    const res = await request(app)
+      .post('/centres')
+      .set('authorization', `Bearer ${userToken}`)
+      .send({
+        name: 'Forbidden Diagnostics',
+        location: 'Bangalore, Karnataka'
+      });
+
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe('FORBIDDEN');
+  });
+
+  it('should create a diagnostic centre with admin token', async () => {
+    const res = await request(app)
+      .post('/centres')
+      .set('authorization', `Bearer ${adminToken}`)
       .send({
         name: 'Apollo Diagnostics Koramangala',
         location: 'Bangalore, Karnataka'
@@ -35,9 +83,35 @@ describe('Centres & Tests Integration Tests', () => {
     createdCentreId = body.id;
   });
 
-  it('should create a diagnostic test', async () => {
+  it('should reject creating diagnostic test without authentication', async () => {
     const res = await request(app)
       .post('/tests')
+      .send({
+        name: 'Unauth Test',
+        description: 'Test description'
+      });
+
+    expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('UNAUTHORIZED');
+  });
+
+  it('should reject creating diagnostic test with regular user role (Forbidden)', async () => {
+    const res = await request(app)
+      .post('/tests')
+      .set('authorization', `Bearer ${userToken}`)
+      .send({
+        name: 'Forbidden Test',
+        description: 'Test description'
+      });
+
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe('FORBIDDEN');
+  });
+
+  it('should create a diagnostic test with admin token', async () => {
+    const res = await request(app)
+      .post('/tests')
+      .set('authorization', `Bearer ${adminToken}`)
       .send({
         name: 'Complete Blood Count (CBC)',
         description: 'Comprehensive blood test measuring red and white blood cells, platelets, and hemoglobin.'
@@ -50,9 +124,35 @@ describe('Centres & Tests Integration Tests', () => {
     createdTestId = body.id;
   });
 
-  it('should attach a test to a centre with centre-specific price', async () => {
+  it('should reject attaching test to centre without authentication', async () => {
     const res = await request(app)
       .post(`/centres/${createdCentreId}/tests`)
+      .send({
+        testId: createdTestId,
+        price: 450.0
+      });
+
+    expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('UNAUTHORIZED');
+  });
+
+  it('should reject attaching test to centre with regular user role (Forbidden)', async () => {
+    const res = await request(app)
+      .post(`/centres/${createdCentreId}/tests`)
+      .set('authorization', `Bearer ${userToken}`)
+      .send({
+        testId: createdTestId,
+        price: 450.0
+      });
+
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe('FORBIDDEN');
+  });
+
+  it('should attach a test to a centre with centre-specific price using admin token', async () => {
+    const res = await request(app)
+      .post(`/centres/${createdCentreId}/tests`)
+      .set('authorization', `Bearer ${adminToken}`)
       .send({
         testId: createdTestId,
         price: 450.0
@@ -68,6 +168,7 @@ describe('Centres & Tests Integration Tests', () => {
   it('should reject attaching the same test to the centre twice (duplicate check)', async () => {
     const res = await request(app)
       .post(`/centres/${createdCentreId}/tests`)
+      .set('authorization', `Bearer ${adminToken}`)
       .send({
         testId: createdTestId,
         price: 500.0
@@ -78,7 +179,7 @@ describe('Centres & Tests Integration Tests', () => {
     expect(body.error.code).toBe('CENTRE_TEST_ALREADY_EXISTS');
   });
 
-  it('should get centre by ID with available tests and prices', async () => {
+  it('should get centre by ID with available tests and prices (public endpoint)', async () => {
     const res = await request(app)
       .get(`/centres/${createdCentreId}`);
 
@@ -88,6 +189,24 @@ describe('Centres & Tests Integration Tests', () => {
     expect(body.tests).toHaveLength(1);
     expect(body.tests[0].testId).toBe(createdTestId);
     expect(body.tests[0].price).toBe(450);
+  });
+
+  it('should list centres without authentication (public endpoint)', async () => {
+    const res = await request(app)
+      .get('/centres');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('data');
+    expect(res.body.data.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('should list tests without authentication (public endpoint)', async () => {
+    const res = await request(app)
+      .get('/tests');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('data');
+    expect(res.body.data.length).toBeGreaterThanOrEqual(1);
   });
 
   it('should reject invalid UUID for centre', async () => {
@@ -111,6 +230,7 @@ describe('Centres & Tests Integration Tests', () => {
   it('should reject negative price when attaching test to centre', async () => {
     const res = await request(app)
       .post(`/centres/${createdCentreId}/tests`)
+      .set('authorization', `Bearer ${adminToken}`)
       .send({
         testId: createdTestId,
         price: -50.0
@@ -123,6 +243,7 @@ describe('Centres & Tests Integration Tests', () => {
   it('should reject price with more than 2 decimal places', async () => {
     const res = await request(app)
       .post(`/centres/${createdCentreId}/tests`)
+      .set('authorization', `Bearer ${adminToken}`)
       .send({
         testId: createdTestId,
         price: 99.999

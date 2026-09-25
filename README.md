@@ -254,13 +254,13 @@ Interactive Swagger documentation is available at `http://localhost:3000/docs`.
 
 | Method | Endpoint | Description | Auth |
 | :--- | :--- | :--- | :--- |
-| `POST` | `/centres` | Create diagnostic centre | Public |
+| `POST` | `/centres` | Create diagnostic centre | ADMIN (Bearer JWT) |
 | `GET` | `/centres` | List diagnostic centres (paginated: `?page=1&limit=20`) | Public |
 | `GET` | `/centres/:id` | Get centre details with available tests & pricing | Public |
-| `POST` | `/tests` | Create diagnostic test | Public |
+| `POST` | `/tests` | Create diagnostic test | ADMIN (Bearer JWT) |
 | `GET` | `/tests` | List diagnostic tests (paginated) | Public |
 | `GET` | `/tests/:id` | Get test details with offering centres | Public |
-| `POST` | `/centres/:id/tests` | Assign test to centre with centre-specific price | Public |
+| `POST` | `/centres/:id/tests` | Assign test to centre with centre-specific price | ADMIN (Bearer JWT) |
 | `GET` | `/centres/:id/tests` | List all tests offered by a centre | Public |
 
 ### Bookings
