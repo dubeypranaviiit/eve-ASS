@@ -410,5 +410,123 @@ describe('Payments & Webhook Idempotency Integration Tests', () => {
       expect(payRes.status).toBe(409);
     }
   });
+
+  it('should handle same webhook repeated 10 times with zero duplicate payments created', async () => {
+    const bRes = await request(app)
+      .post('/bookings')
+      .set('authorization', `Bearer ${user1Token}`)
+      .send({
+        centreId,
+        testId,
+        appointmentAt: new Date(Date.now() + 290 * 60 * 60 * 1000).toISOString()
+      });
+    const bookingId = bRes.body.id;
+
+    const payload = {
+      eventId: 'evt_wh_replay_10x_009',
+      eventType: 'payment.succeeded',
+      data: {
+        bookingId,
+        providerPaymentId: 'pay_provider_wh_10x_009',
+        status: 'SUCCESS'
+      }
+    };
+
+    // Send the exact same webhook 10 times sequentially
+    for (let i = 0; i < 10; i++) {
+      const res = await request(app)
+        .post('/payments/webhook')
+        .send(payload);
+
+      expect(res.status).toBe(200);
+      if (i === 0) {
+        expect(res.body.status).toBe('processed');
+      } else {
+        expect(res.body.status).toBe('already_processed');
+      }
+    }
+
+    // Verify only 1 payment was created in the database
+    const paymentsCount = await prisma.payment.count({
+      where: { bookingId }
+    });
+    expect(paymentsCount).toBe(1);
+  });
+
+  it('should reject payment for a cancelled booking (409 Conflict)', async () => {
+    const bRes = await request(app)
+      .post('/bookings')
+      .set('authorization', `Bearer ${user1Token}`)
+      .send({
+        centreId,
+        testId,
+        appointmentAt: new Date(Date.now() + 300 * 60 * 60 * 1000).toISOString()
+      });
+    const bookingId = bRes.body.id;
+
+    // Cancel booking
+    await request(app)
+      .post(`/bookings/${bookingId}/cancel`)
+      .set('authorization', `Bearer ${user1Token}`);
+
+    // Attempt to pay
+    const pRes = await request(app)
+      .post('/payments')
+      .set('authorization', `Bearer ${user1Token}`)
+      .send({
+        bookingId,
+        providerPaymentId: 'pay_cancelled_booking_attempt',
+        status: 'SUCCESS'
+      });
+
+    expect(pRes.status).toBe(409);
+    expect(pRes.body.error.code).toBe('INVALID_BOOKING_STATE');
+  });
+
+  it('should reject payment with already existing providerPaymentId (409 Conflict)', async () => {
+    // 1. Create first booking and pay
+    const b1Res = await request(app)
+      .post('/bookings')
+      .set('authorization', `Bearer ${user1Token}`)
+      .send({
+        centreId,
+        testId,
+        appointmentAt: new Date(Date.now() + 310 * 60 * 60 * 1000).toISOString()
+      });
+    const bookingId1 = b1Res.body.id;
+
+    await request(app)
+      .post('/payments')
+      .set('authorization', `Bearer ${user1Token}`)
+      .send({
+        bookingId: bookingId1,
+        providerPaymentId: 'pay_duplicate_provider_id_test',
+        status: 'SUCCESS'
+      });
+
+    // 2. Create second booking
+    const b2Res = await request(app)
+      .post('/bookings')
+      .set('authorization', `Bearer ${user1Token}`)
+      .send({
+        centreId,
+        testId,
+        appointmentAt: new Date(Date.now() + 320 * 60 * 60 * 1000).toISOString()
+      });
+    const bookingId2 = b2Res.body.id;
+
+    // 3. Attempt payment for second booking with same providerPaymentId
+    const p2Res = await request(app)
+      .post('/payments')
+      .set('authorization', `Bearer ${user1Token}`)
+      .send({
+        bookingId: bookingId2,
+        providerPaymentId: 'pay_duplicate_provider_id_test',
+        status: 'SUCCESS'
+      });
+
+    expect(p2Res.status).toBe(409);
+    expect(p2Res.body.error.code).toBe('DUPLICATE_PAYMENT');
+  });
 });
 

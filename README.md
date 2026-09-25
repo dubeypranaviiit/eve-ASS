@@ -346,3 +346,22 @@ docker compose up -d --build
 ```bash
 npm test
 ```
+
+### Complete Test Matrix (55 / 55 Passing)
+
+```
+Test Files  5 passed (5)
+     Tests  55 passed (55)
+
+✓ tests/integration/payments.test.js      (14 tests)
+✓ tests/integration/bookings.test.js      (14 tests)
+✓ tests/integration/centres-tests.test.js (17 tests)
+✓ tests/integration/auth.test.js          (7 tests)
+✓ tests/unit/auth.service.test.js         (3 tests)
+```
+
+- **Authentication**: Signup, duplicate email rejection (409), login, invalid credentials (401), missing/invalid JWT (401), protected profile retrieval.
+- **Centres & Tests**: Create centre/test, list centres/tests (public), add test with custom price, duplicate test assignment rejection (409), unauthorized mutation rejection (401), standard USER role forbidden (403), ADMIN authorized creation (201).
+- **Bookings**: Authenticated booking creation with historical price snapshot, past appointment rejection (400), nonexistent centre/test rejection (404), test unoffered by centre (404), sequential slot collision (409), concurrent race condition slot collision (409), user isolation / cross-tenant access rejection (403), invalid UUID (400), nonexistent booking (404), booking cancellation (200), cancel confirmed/cancelled booking rejection (409).
+- **Payments**: Successful payment transitioning to `CONFIRMED`, failed payment transitioning to `FAILED`, unauthorized user payment rejection (403), duplicate payment on confirmed booking rejection (409), duplicate `providerPaymentId` rejection (409), payment for cancelled booking rejection (409), concurrent payment vs cancellation race condition resolution (only one succeeds).
+- **Webhooks**: First delivery processing (`processed`), repeated delivery idempotency (`already_processed`), identical webhook repeated 10 times with zero duplicate payments, concurrent identical webhook safety, malformed payload rejection (400), nonexistent booking rejection (404), conflicting status rejection (409).

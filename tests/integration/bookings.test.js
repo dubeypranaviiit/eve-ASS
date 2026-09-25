@@ -235,4 +235,81 @@ describe('Bookings & Concurrency Integration Tests', () => {
       expect(b.userId).toBeDefined();
     }
   });
+
+  it('should reject booking with non-existent centre (404 Not Found)', async () => {
+    const res = await request(app)
+      .post('/bookings')
+      .set('authorization', `Bearer ${user1Token}`)
+      .send({
+        centreId: '00000000-0000-0000-0000-000000000000',
+        testId,
+        appointmentAt: new Date(Date.now() + 150 * 60 * 60 * 1000).toISOString()
+      });
+
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe('CENTRE_TEST_NOT_FOUND');
+  });
+
+  it('should reject booking with non-existent test (404 Not Found)', async () => {
+    const res = await request(app)
+      .post('/bookings')
+      .set('authorization', `Bearer ${user1Token}`)
+      .send({
+        centreId,
+        testId: '00000000-0000-0000-0000-000000000000',
+        appointmentAt: new Date(Date.now() + 160 * 60 * 60 * 1000).toISOString()
+      });
+
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe('CENTRE_TEST_NOT_FOUND');
+  });
+
+  it('should reject invalid UUID when fetching booking details (400 Validation Error)', async () => {
+    const res = await request(app)
+      .get('/bookings/not-a-valid-uuid')
+      .set('authorization', `Bearer ${user1Token}`);
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('should reject fetching non-existent booking (404 Not Found)', async () => {
+    const res = await request(app)
+      .get('/bookings/00000000-0000-0000-0000-000000000000')
+      .set('authorization', `Bearer ${user1Token}`);
+
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe('BOOKING_NOT_FOUND');
+  });
+
+  it('should reject cancelling an already CONFIRMED booking (409 Conflict)', async () => {
+    // 1. Create booking
+    const bRes = await request(app)
+      .post('/bookings')
+      .set('authorization', `Bearer ${user1Token}`)
+      .send({
+        centreId,
+        testId,
+        appointmentAt: new Date(Date.now() + 170 * 60 * 60 * 1000).toISOString()
+      });
+    const bookingId = bRes.body.id;
+
+    // 2. Pay and confirm
+    await request(app)
+      .post('/payments')
+      .set('authorization', `Bearer ${user1Token}`)
+      .send({
+        bookingId,
+        providerPaymentId: 'pay_cancel_confirmed_check',
+        status: 'SUCCESS'
+      });
+
+    // 3. Attempt to cancel
+    const cancelRes = await request(app)
+      .post(`/bookings/${bookingId}/cancel`)
+      .set('authorization', `Bearer ${user1Token}`);
+
+    expect(cancelRes.status).toBe(409);
+    expect(cancelRes.body.error.code).toBe('INVALID_BOOKING_STATE');
+  });
 });
