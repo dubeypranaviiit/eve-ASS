@@ -227,7 +227,7 @@ describe('Payments & Webhook Idempotency Integration Tests', () => {
     expect(paymentsCount).toBe(1);
   });
 
-  it('should handle concurrent duplicate webhooks safely', async () => {
+  it('should handle 3 concurrent duplicate webhooks safely with Payment count = 1, Booking count = 1, WebhookEvent count = 1', async () => {
     const bRes = await request(app)
       .post('/bookings')
       .set('authorization', `Bearer ${user1Token}`)
@@ -248,23 +248,42 @@ describe('Payments & Webhook Idempotency Integration Tests', () => {
       }
     };
 
-    // Dispatch 2 simultaneous webhook requests with the same eventId
-    const [wh1, wh2] = await Promise.all([
+    // Dispatch 3 simultaneous webhook requests with the exact same eventId and payload
+    const responses = await Promise.all([
+      request(app).post('/payments/webhook').send(payload),
       request(app).post('/payments/webhook').send(payload),
       request(app).post('/payments/webhook').send(payload)
     ]);
 
-    expect(wh1.status).toBe(200);
-    expect(wh2.status).toBe(200);
+    // All 3 requests must acknowledge with 200 OK
+    for (const res of responses) {
+      expect(res.status).toBe(200);
+      expect(res.body.received).toBe(true);
+    }
 
-    const statuses = [wh1.body.status, wh2.body.status];
-    expect(statuses).toContain('processed');
-    expect(statuses).toContain('already_processed');
+    // Exactly 1 response is 'processed', remaining 2 are 'already_processed'
+    const statuses = responses.map((r) => r.body.status);
+    const processedCount = statuses.filter((s) => s === 'processed').length;
+    const alreadyProcessedCount = statuses.filter((s) => s === 'already_processed').length;
+    expect(processedCount).toBe(1);
+    expect(alreadyProcessedCount).toBe(2);
 
-    const paymentRecords = await prisma.payment.findMany({
+    // Explicit database entity count verifications
+    const paymentCount = await prisma.payment.count({
       where: { bookingId }
     });
-    expect(paymentRecords).toHaveLength(1);
+    expect(paymentCount).toBe(1);
+
+    const webhookEventCount = await prisma.paymentWebhookEvent.count({
+      where: { providerEventId: payload.eventId }
+    });
+    expect(webhookEventCount).toBe(1);
+
+    const bookingRecord = await prisma.booking.findUnique({
+      where: { id: bookingId }
+    });
+    expect(bookingRecord).not.toBeNull();
+    expect(bookingRecord.status).toBe('CONFIRMED');
   });
 
   it('should reject webhook with malformed payload (400 Bad Request)', async () => {
@@ -390,10 +409,10 @@ describe('Payments & Webhook Idempotency Integration Tests', () => {
         .set('authorization', `Bearer ${user1Token}`)
     ]);
 
-    // Exactly one should succeed (200/201), and the other should be rejected with 409 Conflict
+    // Exactly one should succeed (200 for cancel, 201 for payment), and the other gets 409 Conflict
     const statuses = [payRes.status, cancelRes.status].sort();
-    expect(statuses[0]).toBe(200); // either 200 (cancel) or 201 (payment)
-    expect(statuses[1]).toBe(409); // the losing request gets 409 Conflict
+    expect([200, 201]).toContain(statuses[0]);
+    expect(statuses[1]).toBe(409);
 
     // Verify DB integrity: booking must NOT be in an invalid dual state
     const finalBooking = await prisma.booking.findUnique({
