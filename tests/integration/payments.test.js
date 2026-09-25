@@ -363,4 +363,52 @@ describe('Payments & Webhook Idempotency Integration Tests', () => {
     expect(res.status).toBe(409);
     expect(res.body.error.code).toBe('PAYMENT_CONFLICT');
   });
+
+  it('should safely handle concurrent payment vs cancellation race conditions (only one succeeds)', async () => {
+    const bRes = await request(app)
+      .post('/bookings')
+      .set('authorization', `Bearer ${user1Token}`)
+      .send({
+        centreId,
+        testId,
+        appointmentAt: new Date(Date.now() + 280 * 60 * 60 * 1000).toISOString()
+      });
+    const bookingId = bRes.body.id;
+
+    // Fire payment and cancellation concurrently
+    const [payRes, cancelRes] = await Promise.all([
+      request(app)
+        .post('/payments')
+        .set('authorization', `Bearer ${user1Token}`)
+        .send({
+          bookingId,
+          providerPaymentId: 'pay_race_condition_008',
+          status: 'SUCCESS'
+        }),
+      request(app)
+        .post(`/bookings/${bookingId}/cancel`)
+        .set('authorization', `Bearer ${user1Token}`)
+    ]);
+
+    // Exactly one should succeed (200/201), and the other should be rejected with 409 Conflict
+    const statuses = [payRes.status, cancelRes.status].sort();
+    expect(statuses[0]).toBe(200); // either 200 (cancel) or 201 (payment)
+    expect(statuses[1]).toBe(409); // the losing request gets 409 Conflict
+
+    // Verify DB integrity: booking must NOT be in an invalid dual state
+    const finalBooking = await prisma.booking.findUnique({
+      where: { id: bookingId },
+      include: { payment: true }
+    });
+
+    if (finalBooking?.status === 'CONFIRMED') {
+      expect(finalBooking.payment).not.toBeNull();
+      expect(payRes.status).toBe(201);
+      expect(cancelRes.status).toBe(409);
+    } else if (finalBooking?.status === 'CANCELLED') {
+      expect(cancelRes.status).toBe(200);
+      expect(payRes.status).toBe(409);
+    }
+  });
 });
+

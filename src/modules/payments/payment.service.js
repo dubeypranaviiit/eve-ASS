@@ -59,6 +59,21 @@ export class PaymentService {
 
     try {
       const result = await prisma.$transaction(async (tx) => {
+        // Atomic conditional state transition: ensures booking is still PENDING at moment of payment
+        const transitioned = await BookingRepository.transitionStatus(
+          booking.id,
+          'PENDING',
+          nextBookingStatus,
+          tx
+        );
+
+        if (!transitioned) {
+          throw new ConflictError(
+            'Cannot process payment because booking status changed concurrently',
+            'INVALID_BOOKING_STATE'
+          );
+        }
+
         const payment = await PaymentRepository.create(
           {
             bookingId: booking.id,
@@ -69,7 +84,7 @@ export class PaymentService {
           tx
         );
 
-        const updatedBooking = await BookingRepository.updateStatus(booking.id, nextBookingStatus, tx);
+        const updatedBooking = await BookingRepository.findById(booking.id, tx);
 
         return { payment, updatedBooking };
       });
@@ -163,6 +178,22 @@ export class PaymentService {
           );
         }
 
+        // Atomic conditional state transition
+        const nextBookingStatus = payload.data.status === 'SUCCESS' ? 'CONFIRMED' : 'FAILED';
+        const transitioned = await BookingRepository.transitionStatus(
+          booking.id,
+          'PENDING',
+          nextBookingStatus,
+          tx
+        );
+
+        if (!transitioned) {
+          throw new ConflictError(
+            'Cannot apply payment to a booking that is no longer pending',
+            'INVALID_BOOKING_STATE'
+          );
+        }
+
         // Create payment record
         const payment = await PaymentRepository.create(
           {
@@ -173,10 +204,6 @@ export class PaymentService {
           },
           tx
         );
-
-        // Update booking status
-        const nextBookingStatus = payload.data.status === 'SUCCESS' ? 'CONFIRMED' : 'FAILED';
-        await BookingRepository.updateStatus(booking.id, nextBookingStatus, tx);
 
         return {
           received: true,

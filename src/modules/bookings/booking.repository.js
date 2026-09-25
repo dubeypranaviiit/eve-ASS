@@ -78,4 +78,18 @@ export class BookingRepository {
       }
     });
   }
+
+  static async transitionStatus(id, fromStatus, toStatus, db = prisma) {
+    const where = {
+      id,
+      status: Array.isArray(fromStatus) ? { in: fromStatus } : fromStatus
+    };
+
+    const { count } = await db.booking.updateMany({
+      where,
+      data: { status: toStatus }
+    });
+
+    return count > 0;
+  }
 }

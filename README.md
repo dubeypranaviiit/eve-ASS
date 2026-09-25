@@ -216,6 +216,12 @@ stateDiagram-v2
 - `PENDING -> FAILED`: Triggerable only via failed payment or webhook event.
 - Invalid transitions (e.g. attempting to cancel a `CONFIRMED` or `CANCELLED` booking, or applying payment to a `CANCELLED` booking) immediately reject with `409 Conflict` (`INVALID_BOOKING_STATE`).
 
+### Concurrency Safety on State Transitions (Optimistic Locking / Conditional Updates)
+To prevent race conditions between simultaneous payment processing and cancellation requests:
+- State transitions are executed via atomic conditional updates (`UPDATE bookings SET status = $target WHERE id = $id AND status = 'PENDING'`).
+- The repository layer executes this atomically (`BookingRepository.transitionStatus`), verifying that `affectedRows === 1`.
+- If a simultaneous cancel and payment request arrive, exactly one will update the row; the losing request observes `affectedRows === 0` and is cleanly aborted with `409 Conflict` (`INVALID_BOOKING_STATE`), preventing any invalid dual state.
+
 ---
 
 ## Payment Flow & Webhook Idempotency

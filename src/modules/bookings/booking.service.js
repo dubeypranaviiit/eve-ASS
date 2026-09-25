@@ -145,7 +145,21 @@ export class BookingService {
     // State machine invariant validation
     validateBookingTransition(booking.status, BookingStatus.CANCELLED, 'user cancellation');
 
-    const updated = await BookingRepository.updateStatus(bookingId, BookingStatus.CANCELLED);
+    // Atomic conditional status transition to prevent cancel vs payment race conditions
+    const transitioned = await BookingRepository.transitionStatus(
+      bookingId,
+      BookingStatus.PENDING,
+      BookingStatus.CANCELLED
+    );
+
+    if (!transitioned) {
+      throw new ConflictError(
+        'Cannot cancel booking because it is no longer in PENDING status',
+        'INVALID_BOOKING_STATE'
+      );
+    }
+
+    const updated = await BookingRepository.findById(bookingId);
 
     return {
       id: updated.id,
