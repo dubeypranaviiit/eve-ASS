@@ -1,0 +1,40 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: eve_api
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: "postgresql://postgres:postgres@postgres:5432/eve_db?schema=public"
+      JWT_SECRET: "eve-healthcare-super-secret-jwt-key-min-32-chars-length"
+      JWT_EXPIRES_IN: "24h"
+      NODE_ENV: "production"
+      PORT: 3000
+      LOG_LEVEL: "info"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: eve_postgres_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: eve_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - eve_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d eve_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  eve_pgdata:
