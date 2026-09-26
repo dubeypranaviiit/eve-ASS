@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
 import { buildApp } from '../../src/app.js';
 import { prisma } from '../../src/db/prisma.js';
-import { clearDatabase } from '../helpers/db.js';
+import { clearDatabase, createTestAdmin } from '../helpers/db.js';
 
 describe('Payments & Webhook Idempotency Integration Tests', () => {
   let app;
@@ -15,11 +15,9 @@ describe('Payments & Webhook Idempotency Integration Tests', () => {
     app = buildApp();
     await clearDatabase();
 
-    // Setup Admin, User 1 & 2
-    const adminRes = await request(app)
-      .post('/auth/signup')
-      .send({ email: 'admin-pay@example.com', password: 'password123', role: 'ADMIN' });
-    const adminToken = adminRes.body.accessToken;
+    // Setup Admin via DB seed helper, User 1 & 2 via public signup
+    const admin = await createTestAdmin('admin-pay@example.com', 'password123');
+    const adminToken = admin.accessToken;
 
     const u1 = await request(app)
       .post('/auth/signup')

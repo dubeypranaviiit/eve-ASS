@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
 import { buildApp } from '../../src/app.js';
 import { prisma } from '../../src/db/prisma.js';
-import { clearDatabase } from '../helpers/db.js';
+import { clearDatabase, createTestAdmin } from '../helpers/db.js';
 
 describe('Bookings & Concurrency Integration Tests', () => {
   let app;
@@ -16,11 +16,9 @@ describe('Bookings & Concurrency Integration Tests', () => {
     app = buildApp();
     await clearDatabase();
 
-    // 1. Create Admin
-    const adminRes = await request(app)
-      .post('/auth/signup')
-      .send({ email: 'admin-booking@example.com', password: 'password123', role: 'ADMIN' });
-    adminToken = adminRes.body.accessToken;
+    // 1. Create Admin via DB seed helper
+    const admin = await createTestAdmin('admin-booking@example.com', 'password123');
+    adminToken = admin.accessToken;
 
     // 2. Create User 1
     const u1Res = await request(app)

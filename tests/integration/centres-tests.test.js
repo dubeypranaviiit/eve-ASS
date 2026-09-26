@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
 import { buildApp } from '../../src/app.js';
 import { prisma } from '../../src/db/prisma.js';
-import { clearDatabase } from '../helpers/db.js';
+import { clearDatabase, createTestAdmin } from '../helpers/db.js';
 
 describe('Centres & Tests Integration Tests', () => {
   let app;
@@ -13,25 +13,20 @@ describe('Centres & Tests Integration Tests', () => {
     app = buildApp();
     await clearDatabase();
 
-    // Create Admin User
-    const adminRes = await request(app)
-      .post('/auth/signup')
-      .send({
-        email: 'admin-centres@example.com',
-        password: 'password123',
-        role: 'ADMIN'
-      });
-    adminToken = adminRes.body.accessToken;
+    // Create Admin User via secure DB seed helper
+    const admin = await createTestAdmin('admin-centres@example.com', 'password123');
+    adminToken = admin.accessToken;
 
-    // Create Regular User
+    // Create Regular User via public signup (demonstrating role cannot be self-elevated)
     const userRes = await request(app)
       .post('/auth/signup')
       .send({
         email: 'patient-centres@example.com',
         password: 'password123',
-        role: 'USER'
+        role: 'ADMIN' // Malicious attempt to self-elevate to ADMIN
       });
     userToken = userRes.body.accessToken;
+    expect(userRes.body.user.role).toBe('USER'); // Verified: forced to USER
   });
 
   afterAll(async () => {

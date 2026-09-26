@@ -32,7 +32,7 @@ export class AuthService {
     const user = await AuthRepository.create({
       email: input.email,
       passwordHash,
-      role: input.role || 'USER'
+      role: 'USER'
     });
 
     const accessToken = await signAccessToken({

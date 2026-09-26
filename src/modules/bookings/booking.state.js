@@ -7,21 +7,31 @@ export const BookingStatus = Object.freeze({
   CANCELLED: 'CANCELLED'
 });
 
-const VALID_TRANSITIONS = {
-  [BookingStatus.PENDING]: [
+export const VALID_TRANSITIONS = Object.freeze({
+  [BookingStatus.PENDING]: Object.freeze([
     BookingStatus.CONFIRMED,
     BookingStatus.FAILED,
     BookingStatus.CANCELLED
-  ],
-  [BookingStatus.CONFIRMED]: [],
-  [BookingStatus.FAILED]: [],
-  [BookingStatus.CANCELLED]: []
-};
+  ]),
+  [BookingStatus.CONFIRMED]: Object.freeze([]),
+  [BookingStatus.FAILED]: Object.freeze([]),
+  [BookingStatus.CANCELLED]: Object.freeze([])
+});
+
+export const ALLOWED_TRANSITIONS = VALID_TRANSITIONS;
+
+export const TERMINAL_STATES = Object.freeze([
+  BookingStatus.CONFIRMED,
+  BookingStatus.FAILED,
+  BookingStatus.CANCELLED
+]);
 
 export function canTransitionBooking(currentStatus, targetStatus) {
   const allowed = VALID_TRANSITIONS[currentStatus] || [];
   return allowed.includes(targetStatus);
 }
+
+export const canTransition = canTransitionBooking;
 
 export function validateBookingTransition(currentStatus, targetStatus, context = '') {
   if (currentStatus === targetStatus) {

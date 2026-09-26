@@ -7,13 +7,12 @@ services:
     restart: unless-stopped
     ports:
       - "3000:3000"
+    env_file:
+      - .env
     environment:
-      DATABASE_URL: "postgresql://postgres:postgres@postgres:5432/eve_db?schema=public"
-      JWT_SECRET: "eve-healthcare-super-secret-jwt-key-min-32-chars-length"
-      JWT_EXPIRES_IN: "24h"
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-eve_db}?schema=public"
       NODE_ENV: "production"
       PORT: 3000
-      LOG_LEVEL: "info"
     depends_on:
       postgres:
         condition: service_healthy
@@ -23,9 +22,9 @@ services:
     container_name: eve_postgres_db
     restart: unless-stopped
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: eve_db
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-eve_db}
     ports:
       - "5432:5432"
     volumes:

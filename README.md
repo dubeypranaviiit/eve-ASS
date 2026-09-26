@@ -344,24 +344,185 @@ docker compose up -d --build
 ## Testing Guide
 
 ```bash
+# Run all unit and integration tests
 npm test
+
+# Run isolated unit tests only (instant, no DB required)
+npx vitest run tests/unit
 ```
 
-### Complete Test Matrix (55 / 55 Passing)
+### Complete Test Matrix
 
 ```
-Test Files  5 passed (5)
-     Tests  55 passed (55)
+Test Files  8 passed (8)
+     Tests  69 passed (69)
 
-✓ tests/integration/payments.test.js      (14 tests)
-✓ tests/integration/bookings.test.js      (14 tests)
-✓ tests/integration/centres-tests.test.js (17 tests)
-✓ tests/integration/auth.test.js          (7 tests)
-✓ tests/unit/auth.service.test.js         (3 tests)
+Unit Test Suites:
+✓ tests/unit/booking.state.test.js        (4 tests)  — State machine transitions & invariants
+✓ tests/unit/payment.service.test.js      (6 tests)  — Payment amount, ownership & repository mocks
+✓ tests/unit/booking.service.test.js      (4 tests)  — Slot checking, pricing & tenant isolation
+✓ tests/unit/auth.service.test.js         (3 tests)  — Argon2 hashing & jose JWT cryptographic signing
+
+Integration Test Suites (Live Database):
+✓ tests/integration/payments.test.js      (14 tests) — Webhook replay (10x), 3x concurrent webhooks, race conditions
+✓ tests/integration/bookings.test.js      (14 tests) — Concurrency slot lock, state transitions, tenant isolation
+✓ tests/integration/centres-tests.test.js (17 tests) — RBAC permissions, ADMIN vs USER, pricing catalog
+✓ tests/integration/auth.test.js          (7 tests)  — Signup, login, invalid credentials, JWT middleware
 ```
 
-- **Authentication**: Signup, duplicate email rejection (409), login, invalid credentials (401), missing/invalid JWT (401), protected profile retrieval.
-- **Centres & Tests**: Create centre/test, list centres/tests (public), add test with custom price, duplicate test assignment rejection (409), unauthorized mutation rejection (401), standard USER role forbidden (403), ADMIN authorized creation (201).
-- **Bookings**: Authenticated booking creation with historical price snapshot, past appointment rejection (400), nonexistent centre/test rejection (404), test unoffered by centre (404), sequential slot collision (409), concurrent race condition slot collision (409), user isolation / cross-tenant access rejection (403), invalid UUID (400), nonexistent booking (404), booking cancellation (200), cancel confirmed/cancelled booking rejection (409).
-- **Payments**: Successful payment transitioning to `CONFIRMED`, failed payment transitioning to `FAILED`, unauthorized user payment rejection (403), duplicate payment on confirmed booking rejection (409), duplicate `providerPaymentId` rejection (409), payment for cancelled booking rejection (409), concurrent payment vs cancellation race condition resolution (only one succeeds).
-- **Webhooks**: First delivery processing (`processed`), repeated delivery idempotency (`already_processed`), identical webhook repeated 10 times with zero duplicate payments, concurrent identical webhook safety, malformed payload rejection (400), nonexistent booking rejection (404), conflicting status rejection (409).
+---
+
+## Edge Cases Tested & Manual Verification Guide
+
+This section provides copy-paste `curl` commands to manually verify the core architectural edge cases handled by the system.
+
+### 1. Authentication & RBAC (Admin Self-Elevation Prevention)
+
+Public signups cannot self-elevate to `ADMIN`. Submitting a `role: "ADMIN"` field during public registration is strictly ignored and forced to `USER`.
+
+#### Attempting Role Elevation:
+```bash
+curl -X POST http://localhost:3000/auth/signup \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "hacker@example.com",
+    "password": "password123",
+    "role": "ADMIN"
+  }'
+```
+**Response (`201 Created`):**
+```json
+{
+  "user": {
+    "id": "...",
+    "email": "hacker@example.com",
+    "role": "USER",
+    "createdAt": "..."
+  },
+  "accessToken": "..."
+}
+```
+*Notice that `role` is forced to `USER`.*
+
+#### Attempting to Create a Diagnostic Centre with a `USER` Token:
+```bash
+curl -X POST http://localhost:3000/centres \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <USER_TOKEN>" \
+  -d '{
+    "name": "Unauthorized Diagnostic Centre",
+    "location": "Bangalore"
+  }'
+```
+**Response (`403 Forbidden`):**
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "You do not have permission to perform this action"
+  }
+}
+```
+
+---
+
+### 2. Booking Concurrency & Slot Double-Booking Prevention
+
+When two patients race to book the exact same slot `(centreId, testId, appointmentAt)` at the exact same millisecond:
+
+```bash
+# Request A:
+curl -X POST http://localhost:3000/bookings \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <USER_A_TOKEN>" \
+  -d '{
+    "centreId": "<CENTRE_ID>",
+    "testId": "<TEST_ID>",
+    "appointmentAt": "2026-10-15T10:00:00.000Z"
+  }'
+
+# Request B (Simultaneous):
+curl -X POST http://localhost:3000/bookings \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <USER_B_TOKEN>" \
+  -d '{
+    "centreId": "<CENTRE_ID>",
+    "testId": "<TEST_ID>",
+    "appointmentAt": "2026-10-15T10:00:00.000Z"
+  }'
+```
+
+- **First request to commit**: Returns `201 Created` with status `PENDING`.
+- **Second request**: PostgreSQL partial unique index (`unique_active_booking_slot`) rejects the insert atomically. The server catches `P2002` and returns `409 Conflict`:
+```json
+{
+  "error": {
+    "code": "BOOKING_SLOT_UNAVAILABLE",
+    "message": "The selected appointment slot is already booked"
+  }
+}
+```
+
+---
+
+### 3. Webhook Idempotency & Replay Handling
+
+Webhooks may be retried or duplicated across unstable networks. The system tracks `providerEventId` inside an ACID transaction to guarantee at-most-once processing.
+
+#### First Webhook Delivery:
+```bash
+curl -X POST http://localhost:3000/payments/webhook \
+  -H "Content-Type: application/json" \
+  -d '{
+    "eventId": "evt_gateway_1001",
+    "eventType": "payment.succeeded",
+    "data": {
+      "bookingId": "<BOOKING_ID>",
+      "providerPaymentId": "pay_gw_1001",
+      "status": "SUCCESS"
+    }
+  }'
+```
+**Response (`200 OK`):**
+```json
+{
+  "received": true,
+  "status": "processed",
+  "eventId": "evt_gateway_1001",
+  "paymentId": "...",
+  "bookingId": "...",
+  "bookingStatus": "CONFIRMED"
+}
+```
+
+#### Second Repeated Delivery (Same payload):
+```bash
+curl -X POST http://localhost:3000/payments/webhook \
+  -H "Content-Type: application/json" \
+  -d '{
+    "eventId": "evt_gateway_1001",
+    "eventType": "payment.succeeded",
+    "data": {
+      "bookingId": "<BOOKING_ID>",
+      "providerPaymentId": "pay_gw_1001",
+      "status": "SUCCESS"
+    }
+  }'
+```
+**Response (`200 OK` - Idempotent, zero duplicate payments):**
+```json
+{
+  "received": true,
+  "status": "already_processed",
+  "eventId": "evt_gateway_1001",
+  "paymentId": "..."
+}
+```
+
+---
+
+### 4. Payment vs Cancellation Race Conditions
+
+If a patient attempts to cancel a booking while a payment gateway webhook arrives concurrently:
+- State transitions execute via atomic conditional updates (`UPDATE bookings SET status = $target WHERE id = $id AND status = 'PENDING'`).
+- Exactly one operation transitions the booking; the losing operation observes `affectedRows === 0` and is safely aborted with `409 Conflict` (`INVALID_BOOKING_STATE`), preventing any invalid dual state.

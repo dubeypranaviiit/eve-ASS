@@ -2,6 +2,7 @@ import express from 'express';
 import { PaymentService } from './payment.service.js';
 import { createPaymentSchema, webhookPayloadSchema } from './payment.schema.js';
 import { authenticate } from '../../plugins/auth.js';
+import { webhookLimiter } from '../../plugins/rate-limit.js';
 import { bookingIdParamSchema } from '../bookings/booking.schema.js';
 import { asyncHandler } from '../../common/utils/async-handler.js';
 
@@ -23,8 +24,8 @@ router.get('/payments/booking/:id', authenticate, asyncHandler(async (req, res) 
   return res.status(200).json(payment);
 }));
 
-// Provider webhook endpoint (public / unauthenticated provider endpoint)
-router.post('/payments/webhook', asyncHandler(async (req, res) => {
+// Provider webhook endpoint (public / unauthenticated provider endpoint with rate limiting)
+router.post('/payments/webhook', webhookLimiter, asyncHandler(async (req, res) => {
   const payload = webhookPayloadSchema.parse(req.body);
   const result = await PaymentService.processWebhook(payload);
   return res.status(200).json(result);
