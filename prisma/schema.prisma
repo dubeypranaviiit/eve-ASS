@@ -7,18 +7,13 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum Role {
-  USER
-  ADMIN
-}
-
 model User {
   id           String    @id @default(uuid())
   email        String    @unique
   passwordHash String
-  role         Role      @default(USER)
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
+  role         Role      @default(USER)
   bookings     Booking[]
 
   @@map("users")
@@ -30,8 +25,8 @@ model DiagnosticCentre {
   location    String
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
-  centreTests CentreTest[]
   bookings    Booking[]
+  centreTests CentreTest[]
 
   @@map("diagnostic_centres")
 }
@@ -42,8 +37,8 @@ model DiagnosticTest {
   description String
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
-  centreTests CentreTest[]
   bookings    Booking[]
+  centreTests CentreTest[]
 
   @@map("diagnostic_tests")
 }
@@ -64,13 +59,6 @@ model CentreTest {
   @@map("centre_tests")
 }
 
-enum BookingStatus {
-  PENDING
-  CONFIRMED
-  FAILED
-  CANCELLED
-}
-
 model Booking {
   id            String           @id @default(uuid())
   userId        String
@@ -81,20 +69,15 @@ model Booking {
   status        BookingStatus    @default(PENDING)
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
-  user          User             @relation(fields: [userId], references: [id], onDelete: Restrict)
-  centre        DiagnosticCentre @relation(fields: [centreId], references: [id], onDelete: Restrict)
-  test          DiagnosticTest   @relation(fields: [testId], references: [id], onDelete: Restrict)
+  centre        DiagnosticCentre @relation(fields: [centreId], references: [id])
+  test          DiagnosticTest   @relation(fields: [testId], references: [id])
+  user          User             @relation(fields: [userId], references: [id])
   payment       Payment?
 
   @@index([userId])
   @@index([centreId, testId, appointmentAt])
   @@index([status])
   @@map("bookings")
-}
-
-enum PaymentStatus {
-  SUCCESS
-  FAILED
 }
 
 model Payment {
@@ -105,7 +88,7 @@ model Payment {
   amount            Decimal       @db.Decimal(10, 2)
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
-  booking           Booking       @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  booking           Booking       @relation(fields: [bookingId], references: [id])
 
   @@index([bookingId])
   @@index([providerPaymentId])
@@ -121,4 +104,21 @@ model PaymentWebhookEvent {
 
   @@index([providerEventId])
   @@map("payment_webhook_events")
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  FAILED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  SUCCESS
+  FAILED
 }
